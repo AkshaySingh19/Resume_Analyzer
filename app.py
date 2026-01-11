@@ -1,86 +1,109 @@
-import streamlit as st
 import os
+import streamlit as st
 from dotenv import load_dotenv
-from src.extract_text import extract_text_from_pdf
-from src.ai_analyzer import analyze_resume_with_ai
+import google.generativeai as genai
+from PyPDF2 import PdfReader
 
-# Load env variables
+# -------------------- CONFIG --------------------
+st.set_page_config(
+    page_title="Resume Analyzer",
+    page_icon="📄",
+    layout="centered"
+)
+
+# -------------------- ENV & MODEL --------------------
 load_dotenv()
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
-st.set_page_config(page_title="GenAI Resume Analyzer", page_icon="🧠", layout="wide")
+if not GOOGLE_API_KEY:
+    st.error("❌ GOOGLE_API_KEY not found in .env")
+    st.stop()
 
-st.title("🧠 GenAI Resume Analyzer")
-st.markdown("Fully powered by Google Gemini (No Regex/Hardcoding)")
+genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel("models/gemini-flash-latest")
 
-# --- Sidebar ---
-with st.sidebar:
-    st.header("🔑 API Setup")
-    env_key = os.getenv("GOOGLE_API_KEY")
-    api_key = st.text_input("Gemini API Key", value=env_key or "", type="password")
-    
-    st.divider()
-    st.header("📂 Upload")
-    uploaded_file = st.file_uploader("Resume (PDF)", type=["pdf"])
-    jd_text = st.text_area("Job Description", height=200)
-    
-    analyze_btn = st.button("Analyze with AI", type="primary")
+# -------------------- UI STYLE --------------------
+st.markdown("""
+<style>
+.stApp {
+    background-color: #0f0f0f;
+    color: #e5e7eb;
+}
+.section {
+    background: #111827;
+    padding: 22px;
+    border-radius: 14px;
+    margin-bottom: 24px;
+}
+h2, h3 {
+    color: #f9fafb;
+}
+</style>
+""", unsafe_allow_html=True)
 
-# --- Main Logic ---
-if analyze_btn:
-    if not api_key:
-        st.error("❌ Please enter your Google Gemini API Key.")
+# -------------------- TITLE --------------------
+st.title("📄 Resume Analyzer")
+st.caption("Analyze resume against a job description")
+
+# -------------------- RESUME UPLOAD --------------------
+st.markdown("<div class='section'>", unsafe_allow_html=True)
+st.subheader("📂 Upload Resume (PDF only)")
+
+uploaded_file = st.file_uploader("Choose a PDF resume", type=["pdf"])
+
+resume_text = ""
+if uploaded_file:
+    reader = PdfReader(uploaded_file)
+    for page in reader.pages:
+        if page.extract_text():
+            resume_text += page.extract_text()
+    st.success("Resume uploaded successfully ✅")
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+# -------------------- JOB DESCRIPTION --------------------
+st.markdown("<div class='section'>", unsafe_allow_html=True)
+st.subheader("📝 Job Description")
+
+job_description = st.text_area(
+    "Paste job description here",
+    height=220,
+    placeholder="Required skills, responsibilities, experience..."
+)
+
+st.markdown("</div>", unsafe_allow_html=True)
+
+# -------------------- ANALYZE BUTTON --------------------
+analyze = st.button("🚀 Analyze Resume", use_container_width=True)
+
+# -------------------- RESULT --------------------
+if analyze:
+    if not resume_text or not job_description:
+        st.warning("⚠ Please upload a resume and enter a job description")
         st.stop()
-        
-    if uploaded_file and jd_text:
-        with st.spinner("🤖 AI is reading your resume..."):
-            
-            # 1. Text Extraction
-            resume_text = extract_text_from_pdf(uploaded_file)
-            
-            # 2. AI Analysis (The RAG/GenAI Step)
-            result = analyze_resume_with_ai(resume_text, jd_text, api_key)
-            
-            if "error" in result:
-                st.error(f"AI Error: {result['error']}")
-            else:
-                # 3. Display Results
-                score = result.get("match_score", 0)
-                
-                # Metrics
-                st.divider()
-                col1, col2 = st.columns([1, 2])
-                with col1:
-                    st.metric("AI Match Score", f"{score}%")
-                    st.progress(score / 100)
-                with col2:
-                    st.info(f"💡 **AI Feedback:** {result.get('summary_feedback')}")
 
-                # Skills Comparison
-                st.divider()
-                c1, c2 = st.columns(2)
-                
-                with c1:
-                    st.subheader("✅ Matched Skills")
-                    # Find intersection (This is logical matching, but AI already did the heavy lifting)
-                    # For simplicity, we assume AI result['resume_skills'] covers it, 
-                    # but let's show exactly what the AI said was missing vs present.
-                    
-                    # Calculate matched simply by checking what is NOT in missing
-                    all_jd = set(result.get("jd_skills", []))
-                    missing = set(result.get("missing_skills", []))
-                    matched = list(all_jd - missing)
-                    
-                    for s in matched:
-                        st.success(s)
-                        
-                with c2:
-                    st.subheader("⚠️ Missing Skills")
-                    for s in missing:
-                        st.error(s)
+    with st.spinner("🤖 Analyzing candidate profile..."):
+        prompt = f"""
+You are an ATS system and professional technical recruiter.
 
-                # Raw AI Data (Debug)
-                with st.expander("🔍 See Raw AI Analysis"):
-                    st.json(result)
+Your tasks:
+1. Give a concise professional summary of the candidate.
+2. List skills the candidate HAS that match the job description.
+3. List skills the candidate is MISSING.
 
-    else:
-        st.warning("Please upload a resume and paste a Job Description.")
+Resume:
+{resume_text}
+
+Job Description:
+{job_description}
+
+Return output with clear headings.
+"""
+
+        response = model.generate_content(prompt)
+        result = response.text
+
+    st.markdown("<div class='section'>", unsafe_allow_html=True)
+    st.subheader("📊 Analysis Result")
+    st.markdown(result)
+    st.markdown("</div>", unsafe_allow_html=True)

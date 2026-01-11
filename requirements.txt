@@ -11,3 +11,7 @@ spacy
 sentence-transformers
 scikit-learn
 pandas
+
+python-dotenv
+google-generativeai
+PyPDF2
