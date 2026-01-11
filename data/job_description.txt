@@ -1,0 +1,13 @@
+Required Skills:
+- Python
+- Java
+- C++
+- SQL
+- Kotlin
+- Git
+- MySQL
+- Firebase
+
+Preferred (Optional):
+- Cloud Basics
+- Docker (Basics)

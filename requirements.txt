@@ -1,0 +1,13 @@
+langchain
+langchain-community
+transformers
+sentence-transformers
+torch
+pdfplumber
+scikit-learn
+streamlit
+pdfplumber
+spacy
+sentence-transformers
+scikit-learn
+pandas
