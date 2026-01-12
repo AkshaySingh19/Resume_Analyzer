@@ -6,90 +6,31 @@ from PyPDF2 import PdfReader
 
 # -------------------- CONFIG --------------------
 st.set_page_config(
-    page_title="Resume Analyzer",
+    page_title="AI Resume Analyzer",
     page_icon="📄",
     layout="centered"
 )
 
-# -------------------- ENV & MODEL --------------------
+# -------------------- LOAD ENV --------------------
 load_dotenv()
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
 
-if not GOOGLE_API_KEY:
-    st.error("❌ GOOGLE_API_KEY not found in .env")
-    st.stop()
-
-genai.configure(api_key=GOOGLE_API_KEY)
 model = genai.GenerativeModel("models/gemini-flash-latest")
 
-# -------------------- UI STYLE --------------------
-st.markdown("""
-<style>
-.stApp {
-    background-color: #0f0f0f;
-    color: #e5e7eb;
-}
-.section {
-    background: #111827;
-    padding: 22px;
-    border-radius: 14px;
-    margin-bottom: 24px;
-}
-h2, h3 {
-    color: #f9fafb;
-}
-</style>
-""", unsafe_allow_html=True)
-
-# -------------------- TITLE --------------------
-st.title("📄 Resume Analyzer")
-st.caption("Analyze resume against a job description")
-
-# -------------------- RESUME UPLOAD --------------------
-st.markdown("<div class='section'>", unsafe_allow_html=True)
-st.subheader("📂 Upload Resume (PDF only)")
-
-uploaded_file = st.file_uploader("Choose a PDF resume", type=["pdf"])
-
-resume_text = ""
-if uploaded_file:
+# -------------------- FUNCTIONS --------------------
+def extract_text_from_pdf(uploaded_file):
     reader = PdfReader(uploaded_file)
+    text = ""
     for page in reader.pages:
-        if page.extract_text():
-            resume_text += page.extract_text()
-    st.success("Resume uploaded successfully ✅")
+        text += page.extract_text()
+    return text
 
-st.markdown("</div>", unsafe_allow_html=True)
 
-# -------------------- JOB DESCRIPTION --------------------
-st.markdown("<div class='section'>", unsafe_allow_html=True)
-st.subheader("📝 Job Description")
+def analyze_resume(resume_text, job_description):
+    prompt = f"""
+You are an ATS (Applicant Tracking System).
 
-job_description = st.text_area(
-    "Paste job description here",
-    height=220,
-    placeholder="Required skills, responsibilities, experience..."
-)
-
-st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------- ANALYZE BUTTON --------------------
-analyze = st.button("🚀 Analyze Resume", use_container_width=True)
-
-# -------------------- RESULT --------------------
-if analyze:
-    if not resume_text or not job_description:
-        st.warning("⚠ Please upload a resume and enter a job description")
-        st.stop()
-
-    with st.spinner("🤖 Analyzing candidate profile..."):
-        prompt = f"""
-You are an ATS system and professional technical recruiter.
-
-Your tasks:
-1. Give a concise professional summary of the candidate.
-2. List skills the candidate HAS that match the job description.
-3. List skills the candidate is MISSING.
+Analyze the resume against the job description.
 
 Resume:
 {resume_text}
@@ -97,13 +38,86 @@ Resume:
 Job Description:
 {job_description}
 
-Return output with clear headings.
+Provide:
+1. Resume Match Percentage
+2. Key Strengths
+3. Missing Skills
 """
 
-        response = model.generate_content(prompt)
-        result = response.text
+    response = model.generate_content(prompt)
+    return response.text
 
-    st.markdown("<div class='section'>", unsafe_allow_html=True)
-    st.subheader("📊 Analysis Result")
-    st.markdown(result)
-    st.markdown("</div>", unsafe_allow_html=True)
+
+# 🔥 NEW FEATURE: INTERVIEW QUESTION GENERATOR
+def generate_interview_questions(resume_text, job_description):
+    prompt = f"""
+You are an AI technical interviewer.
+
+Using the candidate resume and job description below, generate interview questions.
+
+Resume:
+{resume_text}
+
+Job Description:
+{job_description}
+
+Generate:
+1. 3 skill-based technical questions
+2. 2 project-based questions
+3. 2 gap-based questions (skills missing or weak)
+4. 2 scenario-based problem-solving questions
+
+Rules:
+- Questions must be concise
+- Role-specific
+- No explanations
+- Use bullet points
+"""
+
+    response = model.generate_content(prompt)
+    return response.text
+
+
+# -------------------- UI --------------------
+st.title("📄 AI Resume Analyzer with Interview Intelligence")
+
+uploaded_file = st.file_uploader(
+    "Upload Resume (PDF)",
+    type=["pdf"]
+)
+
+job_description = st.text_area(
+    "Paste Job Description",
+    height=200
+)
+
+# -------------------- ANALYZE BUTTON --------------------
+if st.button("Analyze Resume"):
+    if uploaded_file is None or job_description.strip() == "":
+        st.warning("Please upload a resume and provide a job description.")
+    else:
+        with st.spinner("Analyzing resume..."):
+            resume_text = extract_text_from_pdf(uploaded_file)
+            analysis_result = analyze_resume(resume_text, job_description)
+
+        st.subheader("📊 ATS Analysis Result")
+        st.write(analysis_result)
+
+        # Store for later use
+        st.session_state["resume_text"] = resume_text
+        st.session_state["job_description"] = job_description
+
+
+# -------------------- INTERVIEW QUESTIONS --------------------
+if "resume_text" in st.session_state and "job_description" in st.session_state:
+    st.markdown("---")
+    st.subheader("🧠 AI-Suggested Interview Questions")
+
+    if st.button("Generate Interview Questions"):
+        with st.spinner("Generating tailored interview questions..."):
+            questions = generate_interview_questions(
+                st.session_state["resume_text"],
+                st.session_state["job_description"]
+            )
+
+        st.markdown(questions)
